@@ -1,0 +1,95 @@
+;FLAVOR:Marlin
+;TIME:8
+;Filament used: 0.000239473m
+;Layer height: 0.12
+;MINX:196.6
+;MINY:199.9
+;MINZ:0.12
+;MAXX:203.4
+;MAXY:200.1
+;MAXZ:0.24
+;Generated with Cura_SteamEngine 4.7.1
+M140 S50
+M105
+M190 S50
+M104 S200
+M105
+M109 S200
+M82 ;absolute extrusion mode
+M201 X500.00 Y500.00 Z100.00 E5000.00 ;Setup machine max acceleration
+M203 X500.00 Y500.00 Z10.00 E50.00 ;Setup machine max feedrate
+M204 P500.00 R1000.00 T500.00 ;Setup Print/Retract/Travel acceleration
+M205 X8.00 Y8.00 Z0.40 E5.00 ;Setup Jerk
+M220 S100 ;Reset Feedrate
+M221 S100 ;Reset Flowrate
+
+G28 ;Home
+
+G92 E0 ;Reset Extruder
+G1 Z2.0 F3000 ;Move Z Axis up
+G1 X10.1 Y20 Z0.28 F5000.0 ;Move to start position
+G1 X10.1 Y200.0 Z0.28 F1500.0 E15 ;Draw the first line
+G1 X10.4 Y200.0 Z0.28 F5000.0 ;Move to side a little
+G1 X10.4 Y20 Z0.28 F1500.0 E30 ;Draw the second line
+G92 E0 ;Reset Extruder
+G1 Z2.0 F3000 ;Move Z Axis up
+
+G92 E0
+G92 E0
+G1 F2700 E-5
+;LAYER_COUNT:2
+;LAYER:0
+M107
+;MESH:Body2.stl
+G0 F6000 X201.4 Y200.1 Z0.12
+;TYPE:WALL-OUTER
+G1 F2700 E0
+G1 F600 X196.6 Y200.1 E0.04789
+G1 X196.6 Y199.9 E0.04989
+G1 X201.4 Y199.9 E0.09778
+G1 X201.4 Y200.1 E0.09978
+G1 F2700 E-4.90022
+;MESH:NONMESH
+G0 F300 X201.4 Y200.1 Z0.24
+G0 F6000 X201.28 Y200
+G0 X201.336 Y200.036
+G0 X202.165 Y200.036
+G0 X203.4 Y200.1
+;TIME_ELAPSED:6.699883
+;LAYER:1
+M106 S85
+;TYPE:WALL-OUTER
+;MESH:Body2.stl
+G1 F2700 E0.09978
+G1 F600 X196.6 Y200.1 E0.16763
+G1 X196.6 Y199.9 E0.16963
+G1 X203.4 Y199.9 E0.23748
+G1 X203.4 Y200.1 E0.23947
+;TIME_ELAPSED:8.316877
+G1 F2700 E-4.76053
+M140 S0
+M107
+G91 ;Relative positioning
+G1 E-2 F2700 ;Retract a bit
+G1 E-2 Z0.2 F2400 ;Retract and raise Z
+G1 X5 Y5 F3000 ;Wipe out
+G1 Z10 ;Raise Z more
+G90 ;Absolute positionning
+
+G1 X0 Y400 - 100 ;Present print
+M106 S0 ;Turn-off fan
+M104 S0 ;Turn-off hotend
+M140 S0 ;Turn-off bed
+
+M84 X Y E ;Disable all steppers but Z
+M82 ;absolute extrusion mode
+M104 S0
+;End of Gcode
+;SETTING_3 {"global_quality": "[general]\\nversion = 4\\nname = Super Quality #2
+;SETTING_3 \\ndefinition = creality_cr10s4\\n\\n[metadata]\\nquality_type = supe
+;SETTING_3 r\\ntype = quality_changes\\nsetting_version = 15\\n\\n[values]\\nadh
+;SETTING_3 esion_type = none\\n\\n", "extruder_quality": ["[general]\\nversion =
+;SETTING_3  4\\nname = Super Quality #2\\ndefinition = creality_cr10s4\\n\\n[met
+;SETTING_3 adata]\\nquality_type = super\\nposition = 0\\ntype = quality_changes
+;SETTING_3 \\nsetting_version = 15\\n\\n[values]\\ninfill_sparse_density = 15\\n
+;SETTING_3 speed_print = 75\\n\\n"]}

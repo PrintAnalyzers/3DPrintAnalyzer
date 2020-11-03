@@ -98,3 +98,7 @@ MonoBehaviour:
   ImmediateMove: 1
   ExtruderWidth: 0.2
   LayerHeight: 0.12
+  MaximumLineLength: 1
+  MaximumLineSegments: 5
+  LineSegmentBreakTorque: 800
+  LineSegmentBreakForce: 200

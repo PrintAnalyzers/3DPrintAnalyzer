@@ -4,10 +4,15 @@ using UnityEngine;
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(BoxCollider))]
+[RequireComponent(typeof(Rigidbody))]
 public class ProceduralMesh : MonoBehaviour
 {
+    public Vector3 StartPos;
+    public Vector3 EndPos;
+
     Mesh mesh;
     BoxCollider boxCollider;
+    Rigidbody rigidBody;
     Vector3[] vertices;
     int[] triangles;
     float width;
@@ -18,6 +23,7 @@ public class ProceduralMesh : MonoBehaviour
     {
         mesh = GetComponent<MeshFilter>().mesh;
         boxCollider = GetComponent<BoxCollider>();
+        rigidBody = GetComponent<Rigidbody>();
     }
 
     // Start is called before the first frame update
@@ -27,32 +33,26 @@ public class ProceduralMesh : MonoBehaviour
 
     public void GenerateLine(Vector3 start, Vector3 end, float width, float height)
     {
+        StartPos = start;
+        EndPos = end;
         this.width = width;
         this.height = height;
-        transform.position = (start + end) * 0.5f;
-        transform.LookAt(end);
-        // TODO: - 2*width makes the lines shorter to protect them being printed over each other in corners. Need to correct this
-        //length = (end - start).magnitude - 2*width;
+        Reset();
         length = (end - start).magnitude;
         MakeMeshData();
         CreateMesh();
         UpdateBoxCollider();
     }
 
-    /*
-    private void OnDrawGizmos()
+    public void Reset()
     {
-        Gizmos.color = Color.blue;
-        Gizmos.DrawSphere(frontTopLeft, 0.03f);
-        Gizmos.DrawSphere(frontBottomLeft, 0.03f);
-        Gizmos.DrawSphere(frontTopRight, 0.03f);
-        Gizmos.DrawSphere(frontBottomRight, 0.03f);
-        Gizmos.DrawSphere(backTopLeft, 0.03f);
-        Gizmos.DrawSphere(backBottomLeft, 0.03f);
-        Gizmos.DrawSphere(backTopRight, 0.03f);
-        Gizmos.DrawSphere(backBottomRight, 0.03f);
+        transform.position = (StartPos + EndPos) * 0.5f;
+        transform.LookAt(EndPos);
+
+        rigidBody.velocity = Vector3.zero;
+        rigidBody.angularVelocity = Vector3.zero;
+        rigidBody.isKinematic = true;
     }
-    */
 
     Vector3 frontTopLeft;
     Vector3 frontBottomLeft;
@@ -136,5 +136,6 @@ public class ProceduralMesh : MonoBehaviour
     {
         boxCollider.center = new Vector3(0, -0.5f * height, 0);
         boxCollider.size = new Vector3(width, height, length);
+        boxCollider.enabled = true;
     }
 }

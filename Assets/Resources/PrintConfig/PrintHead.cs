@@ -13,10 +13,15 @@ public class PrintHead : MonoBehaviour
         Absolute
     };
 
+    [Tooltip("The print material gameobject. Must be specifically configured to work as expected")]
     public GameObject PrintMaterial;
+    [Tooltip("The speed of printhead movement when not immediate")]
     public float MoveStep = 10;
+    [Tooltip("True if printhead movement should be immediate - no travel time")]
     public bool ImmediateMove = true;
+    [Tooltip("Extruder width (mm) used to set the width of lines. Is usually the same as the width of the printhead nozzle")]
     public float ExtruderWidth = 0.2f;
+    [Tooltip("The height (mm) of a layer. So far we only support static layer heights")]
     public float LayerHeight = 0.12f;
     public delegate void DoneDelegate(List<GameObject> linesCreated);
 
@@ -160,29 +165,12 @@ public class PrintHead : MonoBehaviour
             }
         }
 
-        if (isExtruding)
+        // Only extrude if we actually moved the nozzle
+        if (isExtruding && (move.HasX || move.HasY || move.HasZ))
         {
-            // Extrude small chunks of line
-            var currentPosition = startPosition;
-            var prevPosition = startPosition;
-            var direction = (nextPosition - startPosition).normalized;
-            while(currentPosition != nextPosition)
-            {
-                currentPosition += direction;
-                if ((startPosition - currentPosition).magnitude > (startPosition - nextPosition).magnitude)
-                {
-                    currentPosition = nextPosition;
-                }
-
-                var line = Instantiate(PrintMaterial);
-                line.GetComponent<ProceduralMesh>().GenerateLine(prevPosition, currentPosition, width, height);
-                linesCreated.Add(line);
-
-                prevPosition = currentPosition;
-            }
-            //var line = Instantiate(PrintMaterial);
-            //line.GetComponent<ProceduralMesh>().GenerateLine(startPosition, nextPosition, width, height);
-            //linesCreated.Add(line);
+            var line = Instantiate(PrintMaterial);
+            line.GetComponent<ProceduralMesh>().GenerateLine(startPosition, nextPosition, width, height);
+            linesCreated.Add(line);
         }
 
         transform.position = nextPosition;

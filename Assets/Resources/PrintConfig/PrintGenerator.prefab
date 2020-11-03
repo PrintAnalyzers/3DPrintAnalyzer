@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 3998365054661833078}
   - component: {fileID: 3998365054661833079}
   - component: {fileID: 1656113939694700684}
+  - component: {fileID: -8620034785037764362}
   m_Layer: 0
   m_Name: PrintGenerator
   m_TagString: Untagged
@@ -62,3 +63,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6cad939aa4ef82040a317b9dd3432887, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  LayersToAnalyze: 1
+--- !u!114 &-8620034785037764362
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3998365054661833072}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 52b815665c991b74e8b358bf892439c1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SimulationTime: 0.1
+  MaxMovementDelta: 0.01
