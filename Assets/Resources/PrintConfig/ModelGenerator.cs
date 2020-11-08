@@ -3,12 +3,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.UI;
 
 [RequireComponent(typeof(LayerGenerator))]
 public class ModelGenerator : MonoBehaviour
 {
     [Tooltip("Amount of layers to test physics on in parallel. There will always be a static bottom layer in addition")]
     public int LayersToAnalyze = 1;
+    public Text LayerInfoText;
 
     LayerGenerator layerGenerator;
     bool runningSimulation;
@@ -22,6 +24,7 @@ public class ModelGenerator : MonoBehaviour
         layerGenerator = GetComponent<LayerGenerator>();
         runningSimulation = false;
         layerGenerator.FetchLayer(0, LayerGenerated);
+        LayerInfoText.text = "Analyzing layer " + 1;
     }
 
     void LayerGenerated(int layerID, List<GameObject> layerLines)
@@ -56,30 +59,22 @@ public class ModelGenerator : MonoBehaviour
         // Activate physics for the layers to test
         foreach (var bottomLine in layers.First().Item2)
         {
+            var bottomLineMeshRenderer = bottomLine.GetComponent<MeshRenderer>();
             bottomLine.GetComponent<Collider>().enabled = true;
-            bottomLine.GetComponent<MeshRenderer>().enabled = true;
+            bottomLineMeshRenderer.enabled = true;
             bottomLine.GetComponent<Rigidbody>().isKinematic = true;
-            bottomLine.GetComponent<MeshRenderer>().material.SetColor("_Color", Color.blue);
+            bottomLineMeshRenderer.material.SetColor("_Color", Color.blue);
+            bottomLine.layer = 8;
+            bottomLineMeshRenderer.enabled = true;
         }
 
         var lastLayer = layers.Last().Item2;
         foreach (var line in lastLayer)
         {
+            line.layer = 9;
             var lineCollider = line.GetComponent<BoxCollider>();
             var lineLength = lineCollider.size.magnitude;
             var lineIndex = lastLayer.IndexOf(line);
-
-            for (int i = lineIndex + 1; i < lastLayer.Count(); i++)
-            {
-                var otherLine = lastLayer[i];
-                var otherCollider = otherLine.GetComponent<BoxCollider>();
-                var totalLineLength = lineLength + otherCollider.size.magnitude;
-                var distance = (otherLine.transform.position - line.transform.position).magnitude;
-                if (distance <= totalLineLength)
-                {
-                    Physics.IgnoreCollision(lineCollider, otherLine.GetComponent<Collider>());
-                }
-            }
 
             lineCollider.enabled = true;
             var lineRigidbody = line.GetComponent<Rigidbody>();
@@ -88,8 +83,10 @@ public class ModelGenerator : MonoBehaviour
             lineRigidbody.sleepThreshold = 0;
             lineRigidbody.WakeUp();
             lineRigidbody.AddForce(new Vector3(float.MinValue, 0, 0));
-            line.GetComponent<MeshRenderer>().enabled = true;
-            line.GetComponent<MeshRenderer>().material.SetColor("_Color", Color.green);
+            var lineMeshRenderer = line.GetComponent<MeshRenderer>();
+            lineMeshRenderer.enabled = true;
+            lineMeshRenderer.material.SetColor("_Color", Color.green);
+            lineMeshRenderer.enabled = true;
         }
 
         GetComponent<SimulationRunner>().BeginSimulation(
@@ -108,6 +105,7 @@ public class ModelGenerator : MonoBehaviour
         }
         runningSimulation = false;
         nextLayerToFetch++;
+        LayerInfoText.text = "Analyzing layer " + nextLayerToFetch;
         layerGenerator.FetchLayer(nextLayerToFetch, LayerGenerated);
     }
 }

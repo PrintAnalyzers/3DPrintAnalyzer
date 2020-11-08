@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 using static GcodeReader;
@@ -23,9 +25,15 @@ public class PrintHead : MonoBehaviour
     public float ExtruderWidth = 0.2f;
     [Tooltip("The height (mm) of a layer. So far we only support static layer heights")]
     public float LayerHeight = 0.12f;
+    [Tooltip("The minimum length (mm) for an extrusion to happen")]
+    public float MinimumExtrusionLength = 0.01f;
+    [Tooltip("The starting size of available lines in the linebuffer. We reuse lines from previous layer to avoid the time to create new lines and garbage collect old ones.")]
+    public int StartingLineBufferSize = 10000;
     public delegate void DoneDelegate(List<GameObject> linesCreated);
 
     private List<GameObject> linesCreated = new List<GameObject>();
+    private List<GameObject> freeLines = new List<GameObject>();
+    private int nextIncrementalBufferSize;
 
     public Movement MovementType
     {
@@ -63,6 +71,40 @@ public class PrintHead : MonoBehaviour
     {
         movementType = Movement.Absolute;
         isExtruding = false;
+        nextIncrementalBufferSize = StartingLineBufferSize;
+        freeLines = new List<GameObject>();
+        CreateMoreBufferLines();
+
+    }
+
+    private void CreateMoreBufferLines()
+    {
+        for (int i = 0; i < nextIncrementalBufferSize; i++)
+        {
+            var line = Instantiate(PrintMaterial);
+            line.SetActive(false);
+            freeLines.Add(line);
+        }
+        nextIncrementalBufferSize = nextIncrementalBufferSize * 2;
+    }
+
+    public GameObject GetFreeLine()
+    {
+        if (!freeLines.Any())
+        {
+            CreateMoreBufferLines();            
+        }
+        var line = freeLines[0];
+        freeLines.RemoveAt(0);
+        line.SetActive(true);
+        line.GetComponent<MeshRenderer>().enabled = true;
+        return line;
+    }
+
+    public void ReturnFreeLine(GameObject line)
+    {
+        line.SetActive(false);
+        freeLines.Add(line);
     }
 
     // Update is called once per frame
@@ -77,26 +119,26 @@ public class PrintHead : MonoBehaviour
 
         foreach (var command in commands)
         {
-            if (command is AbsolutePositioning)
+            if (command.Type == GCommand.CommandType.AbsolutePositioning)
             {
                 movementType = Movement.Absolute;
             }
-            else if (command is RelativePositioning)
+            else if (command.Type == GCommand.CommandType.RelativePositioning)
             {
                 movementType = Movement.Relative;
             }
-            else if (command is Move move)
+            else if (command.Type == GCommand.CommandType.Move)
             {
                 if (ImmediateMove)
                 {
-                    MoveHeadImmediate(move, ExtruderWidth, LayerHeight);
+                    MoveHeadImmediate(command, ExtruderWidth, LayerHeight);
                 }
                 else
                 {
-                    MoveHead(move, ExtruderWidth, LayerHeight);
+                    MoveHead(command, ExtruderWidth, LayerHeight);
                 }
             }
-            else if (command is Home)
+            else if (command.Type == GCommand.CommandType.Home)
             {
                 if (ImmediateMove)
                 {
@@ -111,6 +153,8 @@ public class PrintHead : MonoBehaviour
             {
                 throw new NotSupportedException("PrintHead does not support GCommand " + command.ToString());
             }
+
+            command.ReleaseCommand();
         }
         yield return null;
         done(linesCreated);
@@ -133,7 +177,7 @@ public class PrintHead : MonoBehaviour
         transform.position = nextPosition;
     }
 
-    private void MoveHeadImmediate(Move move, float width, float height)
+    private void MoveHeadImmediate(GCommand move, float width, float height)
     {
         var startPosition = transform.position;
         var nextPosition = transform.position;
@@ -166,9 +210,9 @@ public class PrintHead : MonoBehaviour
         }
 
         // Only extrude if we actually moved the nozzle
-        if (isExtruding && (move.HasX || move.HasY || move.HasZ))
+        if (isExtruding && (move.HasX || move.HasY || move.HasZ) && (transform.position - nextPosition).magnitude >= MinimumExtrusionLength)
         {
-            var line = Instantiate(PrintMaterial);
+            var line = GetFreeLine();
             line.GetComponent<ProceduralMesh>().GenerateLine(startPosition, nextPosition, width, height);
             linesCreated.Add(line);
         }
@@ -178,7 +222,7 @@ public class PrintHead : MonoBehaviour
         isExtruding = false;
     }
 
-    private IEnumerator MoveHead(Move move, float width, float height)
+    private IEnumerator MoveHead(GCommand move, float width, float height)
     {
         var startPosition = transform.position;
         var nextPosition = transform.position;
@@ -219,7 +263,7 @@ public class PrintHead : MonoBehaviour
 
         if (isExtruding)
         {
-            var line = Instantiate(PrintMaterial);
+            var line = GetFreeLine();
             line.GetComponent<ProceduralMesh>().GenerateLine(startPosition, nextPosition, width, height);
             linesCreated.Add(line);
         }

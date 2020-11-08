@@ -4,78 +4,85 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-public class GcodeReader : IEnumerable<GcodeReader.GCommand>
+public class GcodeReader
 {
     public TextAsset gcode;
 
-    private List<GCommand> gcommands;
-    private int queuePosition = 0;
+    int gcommandBatchSize = 100;
+    List<GCommand> freeCommands;
+    List<string> gcodeText;
+    GCommand nextCommand = null;
+    int listLocation;
 
     // Start is called before the first frame update
     public GcodeReader(TextAsset gcodeAsset)
     {
+        freeCommands = new List<GCommand>();
+
         if (gcodeAsset == null)
         {
             throw new NotSupportedException("Cannot handle no gcode asset");
         }
         gcode = gcodeAsset;
-        gcommands = new List<GCommand>();
-
-        foreach (var line in gcode.text.Split("\n"[0]))
-        {
-            var trimmedLine = line.Trim();
-            if (trimmedLine.Contains(";"))
-            {
-                trimmedLine = trimmedLine.Substring(0, trimmedLine.IndexOf(";"));
-            }
-            AddNewCommand(ParseGCommand(trimmedLine));
-        }
+        //gcommands = new List<GCommand>();
+        gcodeText = gcode.text.Split("\n"[0]).ToList();
+        ResetQueuePosition();
     }
 
+    private void ReturnUnusedCommand(GCommand command)
+    {
+        command.ResetCommand();
+        freeCommands.Add(command);
+    }
+
+    GCommand GetFreeCommand()
+    {
+        if (!freeCommands.Any())
+        {
+            for (int i = 0; i < gcommandBatchSize; i++)
+            {
+                freeCommands.Add(new GCommand(GCommand.CommandType.Unknown, ReturnUnusedCommand));
+            }
+            gcommandBatchSize *= 2;
+        }
+
+        var command = freeCommands[0];
+        freeCommands.RemoveAt(0);
+        return command;
+    }
     public void ResetQueuePosition()
     {
-        queuePosition = 0;
+        listLocation = 0;
+        nextCommand = ParseNextCommand();
     }
 
     public GCommand PeekCommand()
     {
-        if (queuePosition >= gcommands.Count())
-        {
-            return null;
-        }
-
-        var next = gcommands[queuePosition];
-        return next;
+        return nextCommand;
     }
 
     public GCommand PopCommand()
     {
-        if (queuePosition >= gcommands.Count())
+        var returnCommand = nextCommand;
+        nextCommand = ParseNextCommand();
+        return returnCommand;
+    }
+
+    private GCommand ParseNextCommand()
+    {
+        GCommand command = null;
+        while (command == null && listLocation < gcodeText.Count())
         {
-            return null;
+            var trimmedLine = gcodeText[listLocation].Trim();
+            if (trimmedLine.Contains(";"))
+            {
+                trimmedLine = trimmedLine.Substring(0, trimmedLine.IndexOf(";"));
+            }
+            command = ParseGCommand(trimmedLine);
+            listLocation++;
         }
 
-        var next = gcommands[queuePosition];
-        queuePosition++;
-        return next;
-    }
-
-    public IEnumerator<GCommand> GetEnumerator()
-    {
-        return gcommands.GetEnumerator();
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return gcommands.GetEnumerator();
-    }
-
-    private void AddNewCommand(GCommand command)
-    {
-        if (command != null)
-        {
-            gcommands.Add(command);
-        }
+        return command;
     }
 
     private GCommand ParseGCommand(string line)
@@ -96,22 +103,31 @@ public class GcodeReader : IEnumerable<GcodeReader.GCommand>
 
         if (line.StartsWith("G28"))
         {
-            return new Home();
+            var command = GetFreeCommand();
+            command.SetType(GCommand.CommandType.Home);
+            return command;
         }
 
         if (line.StartsWith("G90"))
         {
-            return new AbsolutePositioning();
+            var command = GetFreeCommand();
+            command.SetType(GCommand.CommandType.AbsolutePositioning);
+            return command;
         }
 
         if (line.StartsWith("G91"))
         {
-            return new RelativePositioning();
+            var command = GetFreeCommand();
+            command.SetType(GCommand.CommandType.RelativePositioning);
+            return command;
         }
 
         if (line.StartsWith("G0") || line.StartsWith("G1"))
         {
-            return new Move(line);
+            var command = GetFreeCommand();
+            command.SetType(GCommand.CommandType.Move);
+            command.ParseMoveCommand(line);
+            return command;
         }
 
         Debug.Log("Unhandled gcommand: " + line);
@@ -120,26 +136,19 @@ public class GcodeReader : IEnumerable<GcodeReader.GCommand>
 
     public class GCommand
     {
+        public delegate void Release(GCommand command);
 
-    }
+        public enum CommandType
+        {
+            AbsolutePositioning,
+            RelativePositioning,
+            Home,
+            Move,
+            Unknown
+        }
 
-    public class AbsolutePositioning : GCommand
-    {
-
-    }
-
-    public class RelativePositioning : GCommand
-    {
-
-    }
-
-    public class Home: GCommand
-    {
-
-    }
-
-    public class Move : GCommand
-    {
+        public CommandType Type;
+        private readonly Release release;
         public float X = 0;
         public float Y = 0;
         public float Z = 0;
@@ -150,29 +159,66 @@ public class GcodeReader : IEnumerable<GcodeReader.GCommand>
         public bool HasZ = false;
         public bool HasE = false;
 
-        public Move(string line)
+        public void ResetCommand()
         {
-            foreach (var part in line.Split(' '))
+            Type = CommandType.Unknown;
+            X = 0;
+            Y = 0;
+            Z = 0;
+            E = 0;
+            HasX = false;
+            HasY = false;
+            HasZ = false;
+            HasE = false;
+        }
+
+        public void SetType(CommandType type)
+        {
+            Type = type;
+        }
+
+        public GCommand(CommandType type, Release release)
+        {
+            Type = type;
+            this.release = release;
+        }
+
+        /// <summary>
+        /// Called when command is no longer used, will place it back to be reused later.
+        /// </summary>
+        public void ReleaseCommand()
+        {
+            release(this);
+        }
+
+        public void ParseMoveCommand(string moveCommand)
+        {
+            foreach (var part in moveCommand.Split(' '))
             {
-                if (part.StartsWith("X"))
+                if (part.Length == 0)
+                {
+                    continue;
+                }
+
+                if (part[0] == 'X')
                 {
                     HasX = true;
                     X = float.Parse(part.Substring(1));
                 }
 
-                if (part.StartsWith("Y"))
+                if (part[0] == 'Y')
                 {
                     HasY = true;
                     Y = float.Parse(part.Substring(1));
                 }
 
-                if (part.StartsWith("Z"))
+                if (part[0] == 'Z')
                 {
                     HasZ = true;
                     Z = float.Parse(part.Substring(1));
                 }
 
-                if (part.StartsWith("E"))
+                if (part[0] == 'E')
                 {
                     HasE = true;
                     E = float.Parse(part.Substring(1));

@@ -18,6 +18,8 @@ public class LayerGenerator : MonoBehaviour
     public float MinimumLayerHeight = 0.01f;
     [Tooltip("Will change first extrusion commands to movement commands. Used to skip extruder initialization steps.")]
     public int FirstExtrusionsToSkip = 0;
+    [Tooltip("The strength of joints to simulate lines stuck to each other")]
+    public float JointConnectionStrength = 10;
 
     public delegate void LayerGenerated(int layerID, List<GameObject> lines);
 
@@ -80,14 +82,22 @@ public class LayerGenerator : MonoBehaviour
         {
             if (linesPerLayer.Keys.Max() >= layerID + 2)
             {
-                //layerID is no longer needed in any calculations, remove it
+                //layerID is no longer needed in any calculations, add it back to the available lines for the printhead
                 foreach (var line in linesPerLayer[layerID])
                 {
-                    Destroy(line);
+                    printHead.ReturnFreeLine(line);
                 }
                 linesPerLayer.Remove(layerID);
                 LayersToDelete.Remove(layerID);
             }
+        }
+    }
+
+    void FinalizeLayerGeneration(List<GameObject> layerLines)
+    {
+        foreach (var layerLine in layerLines)
+        {
+            layerLine.GetComponent<Collider>().enabled = true;
         }
     }
 
@@ -112,18 +122,19 @@ public class LayerGenerator : MonoBehaviour
         {
             var command = reader.PeekCommand();
 
-            if (initExtrusionCommandCounter < FirstExtrusionsToSkip && command is Move moveCommand2)
-            {
-                if (moveCommand2.E > 0)
-                {
-                    initExtrusionCommandCounter++;
-                    moveCommand2.E = 0;
-                    moveCommand2.HasE = false;
-                }
-            }
             if (command == null)
             {
                 break;
+            }
+
+            if (initExtrusionCommandCounter < FirstExtrusionsToSkip && command.Type == GCommand.CommandType.Move)
+            {
+                if (command.E > 0)
+                {
+                    initExtrusionCommandCounter++;
+                    command.E = 0;
+                    command.HasE = false;
+                }
             }
             reader.PopCommand();
             commands.Add(command);
@@ -155,6 +166,8 @@ public class LayerGenerator : MonoBehaviour
         var layer = linesPerLayer[linesPerLayer.Keys.Max()];
         if (layer.Any() && !SameLayer(layer.First().transform.position.y, newLine.transform.position.y))
         {
+            FinalizeLayerGeneration(layer);
+
             layer = new List<GameObject>();
             linesPerLayer.Add(linesPerLayer.Keys.Max() + 1, layer);
         }
@@ -178,7 +191,6 @@ public class LayerGenerator : MonoBehaviour
     List<GameObject> CreateLineSegments(GameObject newLine)
     {
         var segments = new List<GameObject>();
-        newLine.GetComponent<Collider>().enabled = false;
         var collider = newLine.GetComponent<BoxCollider>();
         var start = newLine.GetComponent<ProceduralMesh>().StartPos;
         var stop = newLine.GetComponent<ProceduralMesh>().EndPos;
@@ -187,61 +199,125 @@ public class LayerGenerator : MonoBehaviour
         var direction = (stop - start).normalized * resolution;
         var posNowRelative = new Vector3(0, 0, 0);
         var lastLineEnd = start;
-        while (posNowRelative.magnitude < lineSize)
-        {
-            posNowRelative += direction;
-            var posNow = posNowRelative + start;
-            if (!Physics.Raycast(posNow, new Vector3(0, -1, 0), printHead.LayerHeight * 1.1f))
-            {
-                // No support
-                var gapStart = posNow - direction;
-                    var gapEndRelative = posNowRelative + direction;
-                var gapEnd = gapEndRelative + start;
-                while (gapEndRelative.magnitude < lineSize &&
-                        !Physics.Raycast(gapEnd, new Vector3(0, -1, 0), printHead.LayerHeight * 1.1f))
-                {
-                    gapEndRelative += direction;
-                    gapEnd = gapEndRelative + start;
-                }
-                if (gapEndRelative.magnitude > lineSize)
-                {
-                    gapEndRelative = (stop - start);
-                    gapEnd = gapEndRelative + start;
-                }
-                posNowRelative = gapEndRelative;
-                if (gapStart != start)
-                {
-                    // Create the line segment before the gap
-                    var lineBeforeGap = Instantiate(printHead.PrintMaterial);
-                    lineBeforeGap.GetComponent<ProceduralMesh>().GenerateLine(lastLineEnd - direction, gapStart + direction, printHead.ExtruderWidth, printHead.LayerHeight);
-                    segments.Add(lineBeforeGap);
-                    lastLineEnd = gapStart;
-                }
-                // Create the line segment over the gap
-                var line = Instantiate(printHead.PrintMaterial);
-                line.GetComponent<ProceduralMesh>().GenerateLine(gapStart - direction, gapEnd + direction, printHead.ExtruderWidth, printHead.LayerHeight);
-                segments.Add(line);
-                lastLineEnd = gapEnd;
-            }
-            else
-            {
-                // Support
-                int a = 5;
-            }
-        }
 
-        if (!(Math.Abs(posNowRelative.magnitude - collider.size.magnitude) < 0.0001f))
+        // TODO: printHead height/width needs to change to the line ProceduralMesh corresponding information. They are the same right now but might not always be.
+
+        if (lineSize > 3 * resolution)
         {
-            // Add the last line
-            var line = Instantiate(printHead.PrintMaterial);
-            line.GetComponent<ProceduralMesh>().GenerateLine(lastLineEnd - direction, stop, printHead.ExtruderWidth, printHead.LayerHeight);
-            segments.Add(line);
+            // Find gaps under line and divide the line into segments to allow detection of breaking geometry
+            while (posNowRelative.magnitude < lineSize)
+            {
+                posNowRelative += direction;
+                var posNow = posNowRelative + start;
+                if (!Physics.Raycast(posNow, new Vector3(0, -1, 0), printHead.LayerHeight * 1.1f))
+                {
+                    // No support
+                    var gapStart = posNow - direction;
+                    var gapEndRelative = posNowRelative + direction;
+                    var gapEnd = gapEndRelative + start;
+                    while (gapEndRelative.magnitude < lineSize &&
+                            !Physics.Raycast(gapEnd, new Vector3(0, -1, 0), printHead.LayerHeight * 1.1f))
+                    {
+                        gapEndRelative += direction;
+                        gapEnd = gapEndRelative + start;
+                    }
+                    if (gapEndRelative.magnitude > lineSize)
+                    {
+                        gapEndRelative = (stop - start);
+                        gapEnd = gapEndRelative + start;
+                    }
+                    posNowRelative = gapEndRelative;
+                    if (gapStart != start)
+                    {
+                        // Create the line segment before the gap
+                        var lineBeforeGap = printHead.GetFreeLine();
+                        lineBeforeGap.GetComponent<ProceduralMesh>().GenerateLine(lastLineEnd - direction, gapStart + direction, printHead.ExtruderWidth, printHead.LayerHeight);
+                        segments.Add(lineBeforeGap);
+                        lastLineEnd = gapStart;
+                    }
+                    // Create the line segment over the gap
+                    var line = printHead.GetFreeLine();
+                    line.GetComponent<ProceduralMesh>().GenerateLine(gapStart - direction, gapEnd + direction, printHead.ExtruderWidth, printHead.LayerHeight);
+                    segments.Add(line);
+                    lastLineEnd = gapEnd;
+                }
+            }
+
+            if (!(Math.Abs(posNowRelative.magnitude - collider.size.magnitude) < 0.0001f))
+            {
+                // Add the last line
+                var line = printHead.GetFreeLine();
+                line.GetComponent<ProceduralMesh>().GenerateLine(lastLineEnd - direction, stop, printHead.ExtruderWidth, printHead.LayerHeight);
+                segments.Add(line);
+            }
         }
 
         if (!segments.Any())
         {
-            newLine.GetComponent<Collider>().enabled = true;
-            return new List<GameObject>() { newLine };
+            segments.Add(newLine);
+        }
+        else
+        {
+            printHead.ReturnFreeLine(newLine);
+        }
+
+        // Analyze overhang scenarios and create joints to simulate attachment to underlying layer
+        // TODO: This still seems to create a few extra empty joints, needs to be analyzed
+        foreach (var segment in segments)
+        {
+            var jointedBottomlines = new List<GameObject>();
+            var proceduralMesh = segment.GetComponent<ProceduralMesh>();
+            start = proceduralMesh.StartPos;
+            stop = proceduralMesh.GetComponent<ProceduralMesh>().EndPos;
+
+            /*
+            // Skip any segment that is too short
+            if ((stop - start).magnitude < proceduralMes.Width)
+            {
+                continue;
+            }
+
+            // Skip any attachments to items just at the start and end of a segment
+            start += (stop - start).normalized * proceduralMes.Width;
+            stop -= (stop - start).normalized * proceduralMes.Width;
+            */
+            
+            direction = (stop - start).normalized * resolution;
+            posNowRelative = new Vector3(0, 0, 0);
+            lineSize = (stop - start).magnitude;
+            var segmentWidthDirection = (Quaternion.Euler(0, 90, 0) * direction).normalized;
+            while (posNowRelative.magnitude < lineSize)
+            {
+                var posNow = posNowRelative + start;
+                var segmentTop = segmentWidthDirection * proceduralMesh.Width * 0.45f + posNow;
+                var segmentBottom = segmentWidthDirection * proceduralMesh.Width * -0.45f + posNow;
+                RaycastHit topHit;
+                RaycastHit bottomHit;
+                var segmentTopHasSupport = Physics.Raycast(segmentTop, new Vector3(0, -1, 0), out topHit, proceduralMesh.Height * 1.1f);
+                var segmentBottomHasSupport = Physics.Raycast(segmentBottom, new Vector3(0, -1, 0), out bottomHit, proceduralMesh.Height * 1.1f);
+
+                if (segmentTopHasSupport && !segmentBottomHasSupport && !jointedBottomlines.Contains(topHit.collider.gameObject))
+                {
+                    segment.AddComponent<FixedJoint>();
+                    var fixedJoint = segment.GetComponent<FixedJoint>();
+                    fixedJoint.breakForce = JointConnectionStrength;
+                    fixedJoint.breakTorque = JointConnectionStrength;
+                    fixedJoint.connectedBody = topHit.collider.gameObject.GetComponent<Rigidbody>();
+                    jointedBottomlines.Add(topHit.collider.gameObject);
+                }
+
+                if (segmentBottomHasSupport && ! segmentTopHasSupport && !jointedBottomlines.Contains(bottomHit.collider.gameObject))
+                {
+                    segment.AddComponent<FixedJoint>();
+                    var fixedJoint = segment.GetComponent<FixedJoint>();
+                    fixedJoint.breakForce = JointConnectionStrength;
+                    fixedJoint.breakTorque = JointConnectionStrength;
+                    fixedJoint.connectedBody = bottomHit.collider.gameObject.GetComponent<Rigidbody>();
+                    jointedBottomlines.Add(bottomHit.collider.gameObject);
+                }
+
+                posNowRelative += direction;
+            }
         }
 
         /*
@@ -260,7 +336,6 @@ public class LayerGenerator : MonoBehaviour
         }
         */
 
-        DestroyImmediate(newLine);
         return segments;
     }
 }
